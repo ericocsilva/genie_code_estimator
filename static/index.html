@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Estimador de Custo — Genie Code</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet" />
+  <link rel="icon" href="/static/vivo-logo.svg" />
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <img src="/static/vivo-logo.svg" alt="Vivo" class="logo" />
+      <div class="brand-divider"></div>
+      <div>
+        <h1>Estimador de Custo · Genie Code</h1>
+        <p class="sub">Vivo × Databricks</p>
+      </div>
+    </div>
+    <div class="mode-tabs no-print">
+      <button data-mode="quick" class="active">⚡ Sizing rápido</button>
+      <button data-mode="deep">🔎 Deep dive</button>
+    </div>
+    <div class="actions no-print deep-only">
+      <button id="btn-new" class="ghost">Nova</button>
+      <button id="btn-load" class="ghost">Carregar JSON</button>
+      <button id="btn-save" class="ghost">Salvar JSON</button>
+      <button id="btn-csv" class="ghost">Exportar CSV</button>
+      <button id="btn-print">Imprimir / PDF</button>
+      <input type="file" id="file-input" accept="application/json" hidden />
+    </div>
+  </header>
+
+  <div class="actions no-print quick-only quick-actions">
+    <button id="btn-quick-print" class="ghost">Imprimir / PDF</button>
+  </div>
+
+  <div id="quick" class="quick quick-only">
+    <div class="quick-form">
+      <h2>Sizing rápido de Genie Code</h2>
+      <p class="hint">Quatro perguntas para uma ordem de grandeza do custo do projeto. Para o número final, use o <a href="#" data-mode-link="deep">Deep dive</a>.</p>
+
+      <div class="q-block">
+        <div class="q-title"><span class="q-num">1</span> Quantas pessoas vão usar Genie Code no projeto?</div>
+        <div class="q-row">
+          <input type="number" min="1" id="q-users" class="big-input" />
+          <div class="chips" data-chips="users">
+            <button data-v="10">10</button><button data-v="25">25</button><button data-v="50">50</button><button data-v="100">100</button><button data-v="250">250</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="q-block">
+        <div class="q-title"><span class="q-num">2</span> Como o time vai usar o Genie Code no dia a dia?</div>
+        <div class="cards" id="q-usage"></div>
+      </div>
+
+      <div class="q-block">
+        <div class="q-title"><span class="q-num">3</span> Por quanto tempo? (duração do projeto)</div>
+        <div class="chips" data-chips="months">
+          <button data-v="3">3 meses</button><button data-v="6">6 meses</button><button data-v="12">12 meses</button><button data-v="24">24 meses</button>
+        </div>
+      </div>
+
+      <div class="q-block">
+        <div class="q-title"><span class="q-num">4</span> Haverá automações (jobs ou agentes via service principal) usando Genie Code?</div>
+        <div class="chips" data-chips="automations">
+          <button data-v="0">Não</button><button data-v="1">1–2 fluxos</button><button data-v="5">Vários (3–10)</button>
+        </div>
+        <small class="hint">Service principals não têm free tier. Premissa: cada fluxo consome como um super power user.</small>
+      </div>
+
+      <details class="q-advanced">
+        <summary>Parâmetros (preço, desconto, câmbio, faixas)</summary>
+        <div class="grid">
+          <label>Preço list SRTI (US$/DBU)<input type="number" step="any" min="0" data-q="listPrice" /></label>
+          <label>Desconto contratual (%)<input type="number" step="any" min="0" max="100" data-q="discountPct" /></label>
+          <label>Câmbio (R$ por US$)<input type="number" step="any" min="0" data-q="fx" /></label>
+          <label>DBU por sessão (cenário base)<input type="number" step="any" min="0" data-q="dbuPerSession" /><small>Referência interna provisória: 5 (mediana) a 15 (P75). Calibre com o histórico do cliente.</small></label>
+          <label>Limite projeto P (R$)<input type="number" min="0" data-q="tierP" /></label>
+          <label>Limite projeto M (R$)<input type="number" min="0" data-q="tierM" /></label>
+        </div>
+      </details>
+    </div>
+
+    <div class="quick-result" id="quick-result"></div>
+  </div>
+
+  <div class="layout deep-only">
+    <nav class="steps no-print" id="steps"></nav>
+
+    <main>
+      <!-- 0. Levantamento -->
+      <section class="step" data-step="0" data-title="Levantamento">
+        <h2>0. Levantamento com o cliente</h2>
+        <p class="hint">Use como roteiro da reunião. Marque o que já foi respondido e anote as respostas; tudo vai para o relatório final.</p>
+        <div id="checklist"></div>
+      </section>
+
+      <!-- 1. Projeto -->
+      <section class="step" data-step="1" data-title="Projeto">
+        <h2>1. Identificação da demanda</h2>
+        <div class="grid">
+          <label>Nome do projeto / demanda<input data-bind="project.name" placeholder="Ex.: Modernização pipelines Rede" /></label>
+          <label>Área / diretoria<input data-bind="project.area" /></label>
+          <label>Responsável cliente<input data-bind="project.ownerCustomer" /></label>
+          <label>Responsável Databricks<input data-bind="project.ownerDatabricks" /></label>
+          <label>Mês de início<input type="month" data-bind="project.startMonth" /></label>
+          <label>Horizonte da estimativa (meses)<input type="number" min="1" max="60" data-bind="project.horizon" data-type="number" /></label>
+        </div>
+        <label class="full">Descrição / escopo<textarea rows="4" data-bind="project.description" placeholder="O que será construído com Genie Code? (pipelines, notebooks, dashboards, migração de código...)"></textarea></label>
+      </section>
+
+      <!-- 2. Baseline -->
+      <section class="step" data-step="2" data-title="Baseline histórica">
+        <h2>2. Baseline histórica (consumo real da conta)</h2>
+        <p class="hint">A Databricks recomenda dimensionar a partir de consumo observado — não existe "DBU por usuário" padrão. Rode a query abaixo no workspace do cliente (precisa de acesso a <code>system.billing.usage</code>) e preencha os percentis. Se não houver histórico comparável, rode um piloto de 14–30 dias com um time representativo.</p>
+        <div class="sql-box">
+          <div class="sql-head"><strong>Query 1 — DBU bruto de Genie Code por usuário/mês (percentis)</strong><button class="ghost small" data-copy="sql-baseline">Copiar</button></div>
+          <pre id="sql-baseline"></pre>
+        </div>
+        <div class="sql-box">
+          <div class="sql-head"><strong>Query 2 — Preço list do SKU Serverless Real-Time Inference na região</strong><button class="ghost small" data-copy="sql-price">Copiar</button></div>
+          <pre id="sql-price"></pre>
+        </div>
+        <div class="sql-box">
+          <div class="sql-head"><strong>Query 3 — Consumo de Genie por service principal (sem free tier)</strong><button class="ghost small" data-copy="sql-sp">Copiar</button></div>
+          <pre id="sql-sp"></pre>
+        </div>
+
+        <h3>Resultado observado</h3>
+        <div class="grid">
+          <label>Período observado<input data-bind="baseline.period" placeholder="Ex.: Ago–Set/2026" /></label>
+          <label>Usuários ativos (média/mês)<input type="number" min="0" data-bind="baseline.users" data-type="number" /></label>
+          <label>P50 — DBU bruto/usuário/mês<input type="number" min="0" step="any" data-bind="baseline.p50" data-type="number" /></label>
+          <label>P75 — DBU bruto/usuário/mês<input type="number" min="0" step="any" data-bind="baseline.p75" data-type="number" /></label>
+          <label>P95 — DBU bruto/usuário/mês<input type="number" min="0" step="any" data-bind="baseline.p95" data-type="number" /></label>
+          <label>% usuários dentro do free tier<input type="number" min="0" max="100" step="any" data-bind="baseline.pctFree" data-type="number" /></label>
+        </div>
+        <button id="btn-apply-baseline">Aplicar percentis às personas (Iniciante = P50, Praticante = P75, Power user = P95)</button>
+      </section>
+
+      <!-- 3. Personas -->
+      <section class="step" data-step="3" data-title="Personas & adoção">
+        <h2>3. Personas e adoção</h2>
+        <p class="hint">O free tier de 150 DBU/mês é <strong>individual</strong> (não é pool). Por isso o consumo é modelado por persona: usuários abaixo de 150 DBU não geram custo, e quem passa paga só o excedente. Como o valor é uma média por persona, separe os power users em uma linha própria.</p>
+        <table class="edit-table" id="personas-table">
+          <thead><tr><th>Persona</th><th>Perfil de uso</th><th>Nº usuários</th><th>DBU bruto/usuário/mês</th><th>Fonte do número</th><th class="no-print"></th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <button class="ghost no-print" id="btn-add-persona">+ Adicionar persona</button>
+
+        <h3>Rampa de adoção</h3>
+        <div class="grid">
+          <label>Meses até adoção plena<input type="number" min="1" data-bind="adoption.rampMonths" data-type="number" /></label>
+          <label>% dos usuários ativos no 1º mês<input type="number" min="0" max="100" data-bind="adoption.startPct" data-type="number" /></label>
+          <label>Crescimento mensal após a rampa (%)<input type="number" step="any" data-bind="adoption.growthPct" data-type="number" /></label>
+        </div>
+      </section>
+
+      <!-- 4. Preço -->
+      <section class="step" data-step="4" data-title="Preço & comercial">
+        <h2>4. Parâmetros de preço e comerciais</h2>
+        <div class="grid">
+          <label>Cloud / região<input data-bind="pricing.region" placeholder="Ex.: Azure Brazil South" /></label>
+          <label>Preço list SRTI (US$/DBU)<input type="number" min="0" step="any" data-bind="pricing.listPrice" data-type="number" /><small>Referência US East: US$ 0,07. Confirme o valor regional com a Query 2.</small></label>
+          <label>Desconto contratual (%)<input type="number" min="0" max="100" step="any" data-bind="pricing.discountPct" data-type="number" /></label>
+          <label>Câmbio (R$ por US$)<input type="number" min="0" step="any" data-bind="pricing.fx" data-type="number" /></label>
+          <label>Free tier por usuário (DBU/mês)<input type="number" min="0" data-bind="pricing.freeDbu" data-type="number" /></label>
+          <label>Contingência sobre DBU pago (%)<input type="number" min="0" step="any" data-bind="pricing.contingencyPct" data-type="number" /><small>Margem para power users e variação de uso. Sugestão: 20–50%.</small></label>
+        </div>
+        <label class="check"><input type="checkbox" data-bind="pricing.applyPromo" data-type="bool" /> Aplicar promoção de 25% nos meses até jan/2027 (desmarque para o cenário conservador)</label>
+      </section>
+
+      <!-- 5. Automação & compute -->
+      <section class="step" data-step="5" data-title="Automação & compute">
+        <h2>5. Automação (service principals) e compute associado</h2>
+        <h3>Genie Code via service principal / automação</h3>
+        <p class="hint">Service principals <strong>não têm</strong> free tier: todo o consumo é cobrado.</p>
+        <div class="grid">
+          <label>DBU bruto/mês de Genie via SPs<input type="number" min="0" step="any" data-bind="automation.spDbu" data-type="number" /></label>
+          <label>Descrição<input data-bind="automation.notes" placeholder="Ex.: jobs agendados que chamam Genie Code" /></label>
+        </div>
+
+        <h3>Compute que executa o que o Genie Code gera (fora do budget Genie)</h3>
+        <p class="hint">SQL Warehouse, Jobs, Serverless etc. são cobrados à parte. Informe DBU/mês em adoção plena e o preço efetivo (US$/DBU, já com desconto). Esses valores acompanham a rampa de adoção.</p>
+        <table class="edit-table" id="compute-table">
+          <thead><tr><th>Componente</th><th>DBU/mês (adoção plena)</th><th>US$/DBU efetivo</th><th class="no-print"></th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <button class="ghost no-print" id="btn-add-compute">+ Adicionar componente</button>
+      </section>
+
+      <!-- 6. Resultado -->
+      <section class="step" data-step="6" data-title="Resultado">
+        <h2>6. Estimativa final</h2>
+        <div id="result-header" class="print-only"></div>
+        <div class="kpis" id="kpis"></div>
+        <div id="chart"></div>
+        <h3>Detalhamento mensal</h3>
+        <div class="table-wrap"><table class="result-table" id="monthly-table"></table></div>
+        <h3>Por persona (mês de adoção plena)</h3>
+        <div class="table-wrap"><table class="result-table" id="persona-result"></table></div>
+        <h3>Governança sugerida (Budgets de Genie)</h3>
+        <div id="governance"></div>
+        <h3>Premissas</h3>
+        <ul id="assumptions"></ul>
+        <div id="checklist-print" class="print-only"></div>
+      </section>
+
+      <div class="nav-buttons no-print">
+        <button class="ghost" id="btn-prev">← Anterior</button>
+        <button id="btn-next">Próximo →</button>
+      </div>
+    </main>
+  </div>
+
+  <footer class="no-print">Estimativa indicativa, baseada em premissas informadas pelo cliente. O consumo de Genie Code é agêntico e varia com a complexidade das tarefas; valide com consumo real e controle com Budgets de Genie.</footer>
+
+  <script src="/static/app.js"></script>
+  <script src="/static/quick.js"></script>
+</body>
+</html>
